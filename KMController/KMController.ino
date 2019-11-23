@@ -4,7 +4,10 @@
 #define STEP_PIN 4
 #define DIRECTION_PIN 5
 
-#define DT 1.0
+#define DT 1.0   // Interface polling period (Sec)
+
+#define SPEED_MIN 31    // Limit of arduino tone library
+#define SPEED_MAX 10000  // Motor doesn't like being stepped any faster.
 
 int serialOutput=0; // By default serial output of data is off, unti
                       // 'start' command is issued by computer.
@@ -13,6 +16,8 @@ String readString;
 int speed = 2000;
 int direction = 1;
 int running = 0;
+int ls1_triggered = 0;
+int ls2_triggered = 0;
 
 int parseCmd(String cmdLine, String *key,String *value) {
   int equalsPos;
@@ -43,6 +48,10 @@ void setup(){
   pinMode(DIRECTION_PIN, OUTPUT);
   pinMode(13, OUTPUT); 
   
+  //attachInterrupt(digitalPinToInterrupt(LS1_PIN), ls1_isr, RISING)
+  attachInterrupt(INT0, ls1_isr, RISING);
+  attachInterrupt(INT1, ls2_isr, RISING);
+  
 }
 
 
@@ -56,6 +65,19 @@ void start() {
 void stop() {
    noTone(STEP_PIN);
    running = 0;
+}
+
+void setSpeed(int s) {
+  speed = s;
+  if (s<SPEED_MIN) {
+    speed=SPEED_MIN;
+    Serial.println("Set to Minimum Speed");
+  }
+  if (s>SPEED_MAX) {
+    speed = SPEED_MAX;
+    Serial.println("Set to Maximum Speed");
+  }
+  if (running) start(); 
 }
 
 
@@ -126,7 +148,7 @@ void loop() {
       if (k=="speed") {    //change speed
         Serial.print("Setting Speed to ");
         Serial.println(v);
-        speed = v.toInt();
+        setSpeed(v.toInt());
       }
 
     }
@@ -141,8 +163,30 @@ void loop() {
       Serial.print(",");
     }
   
+  Serial.print(digitalRead(LS1_PIN));
+  Serial.print(", ");
+  Serial.println(digitalRead(LS2_PIN));
+  
+  if (ls1_triggered) {
+    Serial.println("LS1 Triggered");
+    ls1_triggered = 0;
+  }
+  if (ls2_triggered) {
+    Serial.println("LS2 Triggered");
+    ls2_triggered = 0;
+  }
   delay(DT* 1000);
 
+}
+
+void ls1_isr() {
+  stop();
+  ls1_triggered = 1;
+}
+
+void ls2_isr() {
+  stop();
+  ls2_triggered = 1;
 }
 
 
