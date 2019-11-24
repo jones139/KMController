@@ -1,23 +1,52 @@
 
+#include "AccelStepper.h"
+
 #define LS1_PIN 2
 #define LS2_PIN 3
 #define STEP_PIN 4
 #define DIRECTION_PIN 5
 
-#define DT 1.0   // Interface polling period (Sec)
+#define DT 0.1   // Interface polling period (Sec)
 
 #define SPEED_MIN 31    // Limit of arduino tone library
 #define SPEED_MAX 10000  // Motor doesn't like being stepped any faster.
+#define ACC_MIN 1
+#define ACC_MAX 30000
+
+#define MODE_STOP 0
+#define MODE_MOVETO 1
+#define MODE_CYCLE 2
+
+#define DIR_REV 0
+#define DIR_FWD 1
+
+#define CYCLE_MIN 0
+#define CYCLE_MAX 2000  // 200 steps per rev, with 10 microsteps per step.
 
 int serialOutput=0; // By default serial output of data is off, unti
-                      // 'start' command is issued by computer.
+// 'start' command is issued by computer.
                       
 String readString;
-int speed = 2000;
+int speed = SPEED_MAX;
+int acc = ACC_MAX;
+int homed = 0;
 int direction = 1;
-int running = 0;
+int running = 0; 
 int ls1_triggered = 0;
 int ls2_triggered = 0;
+int targetPos = 0;
+
+int cycle_min = 0;
+int cycle_max = 1000;
+
+int opMode = 0;   // 0=stop, 1=moveTo, 2=cycle
+
+AccelStepper stepper;
+
+
+// Function prototypes
+void enableLsInt();
+void disableLsInt();
 
 int parseCmd(String cmdLine, String *key,String *value) {
   int equalsPos;
@@ -33,38 +62,99 @@ int parseCmd(String cmdLine, String *key,String *value) {
   return(equalsPos);
 }
 
+void setDirection(int d) {
+  direction = d;
+  //if (running) start();
+}
 
-
-
-
-
-void setup(){
-  //start serial connection
-  Serial.begin(9600);
-  //configure pin2 as an input and enable the internal pull-up resistor
-  pinMode(LS1_PIN, INPUT_PULLUP);
-  pinMode(LS2_PIN, INPUT_PULLUP);
-  pinMode(STEP_PIN, OUTPUT);
-  pinMode(DIRECTION_PIN, OUTPUT);
-  pinMode(13, OUTPUT); 
-  
-  //attachInterrupt(digitalPinToInterrupt(LS1_PIN), ls1_isr, RISING)
-  attachInterrupt(INT0, ls1_isr, RISING);
-  attachInterrupt(INT1, ls2_isr, RISING);
-  
+void moveTo(int p) {
+  if (homed) {
+    int curPos = stepper.currentPosition();
+    targetPos = p;
+    if (curPos<p)
+      setDirection(DIR_REV);
+    else
+      setDirection(DIR_FWD);
+    running = 1;
+    //Serial.print("MoveTo From ");
+    //Serial.print(curPos);
+    //Serial.print(" to ");
+    //Serial.println(targetPos);
+    stepper.moveTo(targetPos);
+  } else {
+    Serial.println("moveto(): ERROR - Not Homed");
+  }
 }
 
 
-void start() {
+void startCycle() {
+  Serial.println("startCycle()");
   digitalWrite(DIRECTION_PIN,direction);
   digitalWrite(13, direction); 
-  tone(STEP_PIN, speed);
+  targetPos = cycle_min;
+  opMode = MODE_CYCLE;
   running = 1;
+  moveTo(targetPos);
 }
 
+
+/**
+ * If we are have reached the target position, checks if we are
+ * in MODE_CYCLE.
+ * if we are it sets a new target position.   If not it sets the 
+ * 'running' flag to 0 to show we have stopped
+ */
+void checkCycle() {
+  if (stepper.distanceToGo() == 0) {
+    if (opMode == MODE_CYCLE) {
+      if (direction == DIR_FWD) {
+	//Serial.print("checkCycle FWD - moving to ");
+	//Serial.println(CYCLE_MAX);
+	moveTo(cycle_max);
+      } else {
+	//Serial.print("checkCycle REV - moving to ");
+	//Serial.println(CYCLE_MIN);
+	moveTo(cycle_min);
+      }
+    } else {
+      running = 0;
+    }
+  }
+}
+
+
+void home() {
+  disableLsInt();
+  //Serial.println("Ls Int Disabled");
+  
+  int lsval = digitalRead(LS1_PIN);
+
+  // Reverse until we make the limit switch.
+  Serial.println("Rotating until we hit limit switch...");
+  while (!lsval) {
+    stepper.move(-1);
+    stepper.run();
+    lsval = digitalRead(LS1_PIN);
+  }
+  // Go forwards until the limit switch resets.
+  Serial.println("Reversing until we release limit switch...");
+  while (lsval) {
+    stepper.move(1);
+    stepper.run();
+    lsval = digitalRead(LS1_PIN);
+  }
+  stepper.setCurrentPosition(0);
+  homed = 1;
+  Serial.println("Homed!");
+  enableLsInt();
+}
+
+
 void stop() {
-   noTone(STEP_PIN);
-   running = 0;
+  Serial.println("stop()");
+  stepper.stop();
+  opMode = MODE_STOP;
+  running = 0;
 }
 
 void setSpeed(int s) {
@@ -77,14 +167,31 @@ void setSpeed(int s) {
     speed = SPEED_MAX;
     Serial.println("Set to Maximum Speed");
   }
-  if (running) start(); 
+  stepper.setMaxSpeed(speed); 
+}
+
+void setAcc(int a) {
+  acc = a;
+  if (a<ACC_MIN) {
+    acc=ACC_MIN;
+    Serial.println("Set to Minimum Acc");
+  }
+  if (a>ACC_MAX) {
+    a = ACC_MAX;
+    Serial.println("Set to Maximum Acc");
+  }
+  stepper.setAcceleration(acc); 
 }
 
 
-void setDirection(int d) {
-  direction = d;
-  if (running) start();
+void setCycleMax(int p) {
+  cycle_max = p;
 }
+
+void setCycleMin(int p) {
+  cycle_min = p;
+}
+
 
 void reverse() {
   int d;
@@ -92,6 +199,76 @@ void reverse() {
   setDirection(d);
 }
 
+
+
+void ls1_isr() {
+  disableLsInt();
+  int lsVal;
+  // Crude attempt at debounce and to miss noise spikes.
+  delayMicroseconds(100);
+  lsVal = digitalRead(LS1_PIN);
+  if (lsVal) {
+    stop();
+    ls1_triggered = 1;
+  }
+  enableLsInt();
+}
+
+void ls2_isr() {
+  disableLsInt();
+  int lsVal;
+  // Crude attempt at debounce and to miss noise spikes.
+  delayMicroseconds(100);
+  lsVal = digitalRead(LS2_PIN);
+  if (lsVal) {
+    stop();
+    ls2_triggered = 1;
+  }
+  enableLsInt();
+}
+
+void enableLsInt() {
+  attachInterrupt(INT0, ls1_isr, RISING);
+  attachInterrupt(INT1, ls2_isr, RISING);
+}
+
+void disableLsInt() {
+  detachInterrupt(INT0);
+  detachInterrupt(INT1);
+}
+
+void setup(){
+  //start serial connection
+  Serial.begin(9600);
+  //configure pin2 as an input and enable the internal pull-up resistor
+  pinMode(LS1_PIN, INPUT_PULLUP);
+  pinMode(LS2_PIN, INPUT_PULLUP);
+  pinMode(STEP_PIN, OUTPUT);
+  pinMode(DIRECTION_PIN, OUTPUT);
+  pinMode(13, OUTPUT); 
+  
+  
+  
+  stepper = AccelStepper(AccelStepper::DRIVER,
+			 STEP_PIN, 
+			 DIRECTION_PIN);
+  
+  setSpeed(SPEED_MAX);
+  setAcc(ACC_MAX);  
+
+  home();
+  startCycle();
+  
+}
+
+
+
+
+void loop_test() {
+  if (stepper.distanceToGo() == 0)
+    stepper.moveTo(-stepper.currentPosition());
+  stepper.run();
+}
 
 void loop() {
   String k,v;
@@ -104,33 +281,38 @@ void loop() {
       readString += c;
     }
   }
-
+  
   //Serial.println (readString);
-  if (readString.length()>0) {
-      parseCmd(readString, &k,&v);
-      Serial.print("parseCmd k=");
-      Serial.print(k);
-      Serial.print(". v=");
-      Serial.print(v);
-      Serial.println(".");
+  //if (readString.length()>0) {
+  if(readString[readString.length()-1]=='\n') {
+    parseCmd(readString, &k,&v);
+    Serial.print("parseCmd k=");
+    Serial.print(k);
+    Serial.print(". v=");
+    Serial.print(v);
+    Serial.println(".");
     
-  // If no value specified we return the parameter value
-  //
-  if (v=="") {
-    Serial.println("v is empty");
+    // If no value specified we return the parameter value
+    //
+    if (v=="") {
+      //Serial.println("v is empty");
       if (k=="speed") {
         Serial.print("speed=");
         Serial.println(speed);
       }
+      if (k=="acc\n") {
+        Serial.print("acc=");
+        Serial.println(acc);
+      }
       if (k=="start\n") {
-        start();
+        startCycle();
       }
       if (k=="stop\n") {
         stop();
       }
-      if (k=="reverse\n") {
-        Serial.println("Reversing");
-        reverse();
+      if (k=="home\n") {
+        Serial.println("Homing....");
+        home();
       }
       if (k=="settings") {
         Serial.print("Speed,");
@@ -140,54 +322,72 @@ void loop() {
         Serial.print(",");
         Serial.print(running);
       }
-
+      
     }
     
     else {
-      Serial.println("V is not empty");
+      //Serial.println("V is not empty");
       if (k=="speed") {    //change speed
-        Serial.print("Setting Speed to ");
+        Serial.print("Setting Speed=");
         Serial.println(v);
         setSpeed(v.toInt());
       }
-
+      if (k=="acc") {    //change speed
+        Serial.print("Setting acc=");
+        Serial.println(v);
+        setAcc(v.toInt());
+      }
+      if (k=="cmax") {    //change the maximum position during cycling
+        Serial.print("Setting cmax=");
+        Serial.println(v);
+        setCycleMax(v.toInt());
+      }
+      if (k=="cmin") {    //change the maximum position during cycling
+        Serial.print("Setting cmin=");
+        Serial.println(v);
+        setCycleMin(v.toInt());
+      }
+      if (k=="moveto") {    //change the maximum position during cycling
+        Serial.print("moveto=");
+        Serial.println(v);
+        moveTo(v.toInt());
+      }
+      
     }
     
     readString = "";
-
-    }
+    
+  }
   
-
-    if (serialOutput==1){
-      Serial.print("data,");
-      Serial.print(",");
-    }
   
-  Serial.print(digitalRead(LS1_PIN));
-  Serial.print(", ");
-  Serial.println(digitalRead(LS2_PIN));
+  if (serialOutput==1){
+    Serial.print("data,");
+    Serial.print(",");
+  }
+  
+  //Serial.print(digitalRead(LS1_PIN));
+  //Serial.print(", ");
+  //Serial.println(digitalRead(LS2_PIN));
   
   if (ls1_triggered) {
     Serial.println("LS1 Triggered");
     ls1_triggered = 0;
   }
+  
   if (ls2_triggered) {
     Serial.println("LS2 Triggered");
     ls2_triggered = 0;
   }
-  delay(DT* 1000);
 
+  // Check to see if we have reached the end of the cycle travel,
+  // and reverse travel if necessary.
+  stepper.run();
+  checkCycle();
+  
+  //delay(DT* 1000);
+  
 }
 
-void ls1_isr() {
-  stop();
-  ls1_triggered = 1;
-}
-
-void ls2_isr() {
-  stop();
-  ls2_triggered = 1;
-}
 
 
 
