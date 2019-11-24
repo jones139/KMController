@@ -27,7 +27,7 @@ int serialOutput=0; // By default serial output of data is off, unti
 // 'start' command is issued by computer.
                       
 String readString;
-int speed = SPEED_MAX;
+int speed = 2000;
 int acc = ACC_MAX;
 int homed = 0;
 int direction = 1;
@@ -253,7 +253,7 @@ void setup(){
 			 STEP_PIN, 
 			 DIRECTION_PIN);
   
-  setSpeed(SPEED_MAX);
+  setSpeed(1000);
   setAcc(ACC_MAX);  
 
   home();
