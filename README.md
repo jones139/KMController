@@ -10,11 +10,11 @@ commands:
  * HOME : Rotate in the reverse direction until the home limit switch is activated.
  * START : start cycing between the minimum and maximum programmed positions.
  * STOP  : stop moving.
- * MOVETO=<p>: move to the given position and stop
- * SPEED=<s>: set the movement speed to <s>
- * ACC=<a>: set the acceleration to <a>
- * CMAX=<p>: Set the maximum position during cycling to <p>
- * CMIN=<p>: Set the minimumposition during cycling to <p>
+ * MOVETO=p: move to the given position and stop
+ * SPEED=s: set the movement speed to <s>
+ * ACC=a: set the acceleration to <a>
+ * CMAX=p: Set the maximum position during cycling to <p>
+ * CMIN=p: Set the minimumposition during cycling to <p>
 
 
 Installation
