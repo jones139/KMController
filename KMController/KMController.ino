@@ -1,8 +1,8 @@
 
 #include "AccelStepper.h"
 
-#define LS1_PIN 2
-#define LS2_PIN 3
+#define LS1_PIN 3
+#define LS2_PIN 2
 #define STEP_PIN 4
 #define DIRECTION_PIN 5
 
@@ -28,7 +28,7 @@ int serialOutput=0; // By default serial output of data is off, unti
                       
 String readString;
 int speed = 2000;
-int acc = ACC_MAX;
+int acc = 5000;
 int homed = 0;
 int direction = 1;
 int running = 0; 
@@ -37,7 +37,7 @@ int ls2_triggered = 0;
 int targetPos = 0;
 
 int cycle_min = 0;
-int cycle_max = 1000;
+int cycle_max = 1300;
 
 int opMode = 0;   // 0=stop, 1=moveTo, 2=cycle
 
@@ -124,29 +124,49 @@ void checkCycle() {
 
 
 void home() {
+  int ls1val, ls2val;
+  Serial.println("home()");
   disableLsInt();
   //Serial.println("Ls Int Disabled");
   
-  int lsval = digitalRead(LS1_PIN);
-
+  /*while(1) {
+    ls1val = digitalRead(LS1_PIN);
+    ls2val = digitalRead(LS2_PIN);
+    Serial.print("LS1=");
+    Serial.print(ls1val);
+    Serial.print(",  LS2=");
+    Serial.println(ls2val);
+  }
+  */
+  
   // Reverse until we make the limit switch.
   Serial.println("Rotating until we hit limit switch...");
-  while (!lsval) {
+  while (ls1val) {
+    Serial.print(".");
     stepper.move(-1);
     stepper.run();
-    lsval = digitalRead(LS1_PIN);
+    ls1val = digitalRead(LS1_PIN);
+    if (ls1val==0) {
+      Serial.println("Re-reading to check for glitches");
+      ls1val = digitalRead(LS1_PIN);
+    }
   }
   // Go forwards until the limit switch resets.
   Serial.println("Reversing until we release limit switch...");
-  while (lsval) {
+  while (!ls1val) {
     stepper.move(1);
     stepper.run();
-    lsval = digitalRead(LS1_PIN);
+    ls1val = digitalRead(LS1_PIN);
+    if (ls1val==1) {
+      Serial.println("Re-reading to check for glitches");
+      ls1val = digitalRead(LS1_PIN);
+    }
   }
   stepper.setCurrentPosition(0);
   homed = 1;
   Serial.println("Homed!");
-  enableLsInt();
+  //enableLsInt();
+  Serial.println("Returning from home()");
 }
 
 
@@ -205,10 +225,12 @@ void ls1_isr() {
   disableLsInt();
   int lsVal;
   // Crude attempt at debounce and to miss noise spikes.
-  delayMicroseconds(100);
+  //delayMicroseconds(100);
   lsVal = digitalRead(LS1_PIN);
-  if (lsVal) {
-    stop();
+  //lsVal = digitalRead(LS1_PIN);
+  //lsVal = digitalRead(LS1_PIN);
+  if (!lsVal) {
+    //stop();
     ls1_triggered = 1;
   }
   enableLsInt();
@@ -218,23 +240,29 @@ void ls2_isr() {
   disableLsInt();
   int lsVal;
   // Crude attempt at debounce and to miss noise spikes.
-  delayMicroseconds(100);
+  //delayMicroseconds(100);
   lsVal = digitalRead(LS2_PIN);
-  if (lsVal) {
-    stop();
+  //lsVal = digitalRead(LS2_PIN);
+  //lsVal = digitalRead(LS2_PIN);
+  if (!lsVal) {
+    //stop();
     ls2_triggered = 1;
   }
   enableLsInt();
 }
 
 void enableLsInt() {
-  attachInterrupt(INT0, ls1_isr, RISING);
-  attachInterrupt(INT1, ls2_isr, RISING);
+  attachInterrupt(INT0, ls1_isr, FALLING);
+  attachInterrupt(INT1, ls2_isr, FALLING);
+  //attachInterrupt(digitalPinToInterrupt(LS1_PIN), ls1_isr, FALLING);
+  //attachInterrupt(digitalPinToInterrupt(LS2_PIN), ls2_isr, FALLING);
 }
 
 void disableLsInt() {
   detachInterrupt(INT0);
   detachInterrupt(INT1);
+  //detachInterrupt(digitalPinToInterrupt(LS1_PIN));
+  //detachInterrupt(digitalPinToInterrupt(LS2_PIN));
 }
 
 void setup(){
@@ -257,7 +285,7 @@ void setup(){
   setAcc(ACC_MAX);  
 
   home();
-  startCycle();
+  //startCycle();
   
 }
 
@@ -272,9 +300,11 @@ void loop_test() {
 
 void loop() {
   String k,v;
+  //Serial.print(".");
   ////////////////////////////////////////////////
   // respond to commands from serial.
   ////////////////////////////////////////////////
+  //readString="";
   while (Serial.available()) {
     if (Serial.available() > 0) {
       char c = Serial.read();
@@ -282,9 +312,9 @@ void loop() {
     }
   }
   
-  //Serial.println (readString);
   //if (readString.length()>0) {
   if(readString[readString.length()-1]=='\n') {
+    Serial.println (readString);
     parseCmd(readString, &k,&v);
     Serial.print("parseCmd k=");
     Serial.print(k);
@@ -296,7 +326,7 @@ void loop() {
     //
     if (v=="") {
       //Serial.println("v is empty");
-      if (k=="speed") {
+      if (k=="speed\n") {
         Serial.print("speed=");
         Serial.println(speed);
       }
@@ -314,7 +344,7 @@ void loop() {
         Serial.println("Homing....");
         home();
       }
-      if (k=="settings") {
+      if (k=="settings\n") {
         Serial.print("Speed,");
         Serial.print(speed);
         Serial.print(",");
@@ -371,11 +401,13 @@ void loop() {
   
   if (ls1_triggered) {
     Serial.println("LS1 Triggered");
+    stop();
     ls1_triggered = 0;
   }
   
   if (ls2_triggered) {
     Serial.println("LS2 Triggered");
+    stop();
     ls2_triggered = 0;
   }
 
@@ -387,7 +419,3 @@ void loop() {
   //delay(DT* 1000);
   
 }
-
-
-
-
