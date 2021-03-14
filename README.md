@@ -19,13 +19,21 @@ commands:
 
 Installation
 ------------
+The serial interface to the microcontroller needs to be /dev/kmirror.
+This can be achieved with a udev rule such as /etc/udev/rules.d/92-kmirror.rules which contains the following:
 
-make
+```# Force K-mirror arduino nano board to by symlinked to /dev/kmirror
+# idVendor=1a86, idProduct=7523
+ACTION=="add", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="kmirror"
+```
+The idVendor and idProduct need to match the particular device in use (use lsusb or dmesg)
+
+Compile and upload to the microcontroller with:
+```make
 make upload
+```
 
-....should work....failing that try the arduino IDE.
-I'm having trouble with
-make monitor
-which doesn't echo anything I type and although I can see the comms LED
-flashing on the board, nothing appears on the screen, but it works with the
-Arduino IDE monitor.
+you can monitor the output from the microcontroller with
+```make monitor```
+
+To exit the monitor screen do ctrl-a ctrl-d.   This detatches the terminal from the monitor but leaves it running reattach with screen -r or kill the process.

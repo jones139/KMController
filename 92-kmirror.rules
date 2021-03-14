@@ -1,0 +1,4 @@
+# Force K-mirror arduino nano board to by symlinked to /dev/kmirror
+# idVendor=1a86, idProduct=7523
+ACTION=="add", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="kmirror"
+
