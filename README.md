@@ -29,11 +29,14 @@ ACTION=="add", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="kmir
 The idVendor and idProduct need to match the particular device in use (use lsusb or dmesg)
 
 Compile and upload to the microcontroller with:
-```make
+```
+make
 make upload
 ```
 
 you can monitor the output from the microcontroller with
-```make monitor```
+```
+make monitor
+```
 
 To exit the monitor screen do ctrl-a ctrl-d.   This detatches the terminal from the monitor but leaves it running reattach with screen -r or kill the process.
