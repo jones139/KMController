@@ -1,6 +1,6 @@
 # Arduino Make file. Refer to https://github.com/sudar/Arduino-Makefile
 
-MONITOR_PORT = /dev/ttyUSB3
+MONITOR_PORT = /dev/kmirror
 BOARD_TAG   = nano
 BOARD_SUB   = atmega328old
 ARDUINO_DIR = /usr/local/arduino
