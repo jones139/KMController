@@ -10,8 +10,12 @@
 
 #define SPEED_MIN 31    // Limit of arduino tone library
 #define SPEED_MAX 10000  // Motor doesn't like being stepped any faster.
+#define SPEED_INIT 500
+#define HOME_SPEED 500
+#define HOME_ACC 1000
 #define ACC_MIN 1
 #define ACC_MAX 30000
+#define ACC_INIT 1000
 
 #define MODE_STOP 0
 #define MODE_MOVETO 1
@@ -21,14 +25,14 @@
 #define DIR_FWD 1
 
 #define CYCLE_MIN 0
-#define CYCLE_MAX 2000  // 200 steps per rev, with 10 microsteps per step.
+#define CYCLE_MAX 1300  // 200 steps per rev, with 10 microsteps per step.
 
 int serialOutput=0; // By default serial output of data is off, unti
 // 'start' command is issued by computer.
                       
 String readString;
-int speed = 2000;
-int acc = 5000;
+int speed = 500;
+int acc = 1000;
 int homed = 0;
 int direction = 1;
 int running = 0; 
@@ -136,28 +140,33 @@ void home() {
     Serial.print(ls1val);
     Serial.print(",  LS2=");
     Serial.println(ls2val);
-  }
-  */
+  }*/
   
+
+  // Home SLOWLY
+  stepper.setMaxSpeed(HOME_SPEED);
+  stepper.setAcceleration(HOME_ACC);
+
   // Reverse until we make the limit switch.
   Serial.println("Rotating until we hit limit switch...");
-  while (ls1val) {
-    Serial.print(".");
+  ls1val = digitalRead(LS1_PIN);
+  while (!ls1val) {
+    //Serial.print(".");
     stepper.move(-1);
     stepper.run();
     ls1val = digitalRead(LS1_PIN);
-    if (ls1val==0) {
+    if (ls1val==1) {
       Serial.println("Re-reading to check for glitches");
       ls1val = digitalRead(LS1_PIN);
     }
   }
   // Go forwards until the limit switch resets.
   Serial.println("Reversing until we release limit switch...");
-  while (!ls1val) {
+  while (ls1val) {
     stepper.move(1);
     stepper.run();
     ls1val = digitalRead(LS1_PIN);
-    if (ls1val==1) {
+    if (ls1val==0) {
       Serial.println("Re-reading to check for glitches");
       ls1val = digitalRead(LS1_PIN);
     }
@@ -281,12 +290,12 @@ void setup(){
 			 STEP_PIN, 
 			 DIRECTION_PIN);
   
-  setSpeed(1000);
-  setAcc(ACC_MAX);  
 
   home();
   //startCycle();
   
+  setSpeed(SPEED_INIT);
+  setAcc(ACC_INIT);  
 }
 
 
